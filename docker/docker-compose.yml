@@ -1,0 +1,123 @@
+# ==========================================
+# Docker Compose for GPAlytics Backend
+# Optimized for development and production
+# ==========================================
+
+services:
+  # ==========================================
+  # SQL Server for local development
+  # ==========================================
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: gpalytics_sqlserver
+    environment:
+      SA_PASSWORD: "GPAlytics2024!"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'GPAlytics2024!' -Q 'SELECT 1' -C"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - gpalytics_network
+    restart: unless-stopped
+
+  # ==========================================
+  # Database Initializer
+  # ==========================================
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: gpalytics_db_init
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    command: >
+      /bin/bash -c "
+      echo 'Creating GPAlytics database...' &&
+      /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U SA -P 'GPAlytics2024!' -C -Q 'CREATE DATABASE GPAlytics' ||
+      echo 'Database might already exist, continuing...' &&
+      echo 'Database initialization complete'
+      "
+    networks:
+      - gpalytics_network
+
+  # ==========================================
+  # FastAPI Application
+  # ==========================================
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: gpalytics_app
+    environment:
+      # Use local SQL Server
+      DATABASE_URL: "mssql+aioodbc://sa:GPAlytics2024!@sqlserver:1433/GPAlytics?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes"
+      JWT_SECRET_KEY: "dev-secret-key-change-in-production"
+      JWT_ALGORITHM: "HS256"
+      JWT_EXPIRE_MINUTES: "30"
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    volumes:
+      - ../logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - gpalytics_network
+    restart: unless-stopped
+
+  # ==========================================
+  # Development mode with hot-reload
+  # ==========================================
+  app-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: gpalytics_app_dev
+    environment:
+      DATABASE_URL: "mssql+aioodbc://sa:GPAlytics2024!@sqlserver:1433/GPAlytics?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes"
+      JWT_SECRET_KEY: "dev-secret-key-change-in-production"
+      JWT_ALGORITHM: "HS256"
+      JWT_EXPIRE_MINUTES: "30"
+      DEBUG: "true"
+      PYTHONPATH: "/app"
+    ports:
+      - "8001:8000"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    volumes:
+      - ../app:/app/app:rw
+      - ../tests:/app/tests:rw
+      - ../logs:/app/logs
+      - ../.env:/app/.env:ro
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
+    networks:
+      - gpalytics_network
+    profiles:
+      - dev
+
+volumes:
+  sqlserver_data:
+    driver: local
+
+networks:
+  gpalytics_network:
+    driver: bridge

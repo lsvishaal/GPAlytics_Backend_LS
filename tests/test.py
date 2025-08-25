@@ -12,9 +12,9 @@ async def test_auth():
     print("🔐 Testing Auth...\n")
     
     try:
-        from GPAlytics_Backend_LS.src.database import db_manager
-        from GPAlytics_Backend_LS.src.models import UserRegister
-        from GPAlytics_Backend_LS.src.auth import register_user, login_user, validate_regno, validate_password
+        from GPAlytics_Backend_LS.app.database import db_manager
+        from GPAlytics_Backend_LS.app.models import UserRegister
+        from GPAlytics_Backend_LS.app.auth import register_user, login_user, validate_regno, validate_password
         
         print("1. Validation Tests:")
         print(f"   Valid regno: {validate_regno('RA2211027020113') is None}")
