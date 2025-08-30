@@ -1,5 +1,5 @@
 """
-Database connection and configuration
+ database connection for Azure SQL Database
 """
 from pydantic_settings import BaseSettings
 from pydantic import Field, SecretStr
@@ -13,16 +13,26 @@ import secrets
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# CONFIGURATION
+# SETTINGS
 # ==========================================
 
 class Settings(BaseSettings):
     """Application settings"""
+    
+    # Database
     database_url: SecretStr = Field(...)
+    
+    # Redis
+    redis_url: str = Field(default="redis://localhost:6379")
+    
+    # JWT
     jwt_secret_key: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
-    debug: bool = True
+    
+    # App
+    debug: bool = False
+    environment: str = Field(default="production")
     
     @property
     def database_url_str(self) -> str:
@@ -31,9 +41,12 @@ class Settings(BaseSettings):
     @property 
     def jwt_secret_str(self) -> str:
         return self.jwt_secret_key.get_secret_value()
+    
+    @property
+    def is_development(self) -> bool:
+        return self.environment.lower() == "development"
 
-    class Config:
-        env_file = ".env"
+    model_config = {"env_file": ".env"}
 
 settings = Settings()
 
@@ -42,7 +55,7 @@ settings = Settings()
 # ==========================================
 
 class DatabaseManager:
-    """Database connection manager"""
+    """Simple database manager for Azure SQL"""
     
     def __init__(self):
         self.async_engine = None
@@ -50,18 +63,24 @@ class DatabaseManager:
         self._initialized = False
     
     def initialize(self) -> None:
-        """Initialize database connection"""
+        """Initialize Azure database connection"""
         if self._initialized:
             return
             
-        logger.info("🔌 Initializing database...")
+        logger.info(f"🔌 Connecting to Azure SQL Database ({settings.environment})...")
+        
+        # Engine configuration
+        engine_kwargs = {
+            "echo": settings.debug and settings.is_development,
+            "pool_size": 5,
+            "pool_timeout": 30,
+            "pool_pre_ping": True,
+            "pool_recycle": 3600,  # Recycle connections every hour
+        }
         
         self.async_engine = create_async_engine(
             settings.database_url_str,
-            echo=settings.debug,
-            pool_size=5,
-            pool_timeout=30,
-            pool_pre_ping=True
+            **engine_kwargs
         )
         
         self.async_session_factory = sessionmaker(
@@ -71,7 +90,7 @@ class DatabaseManager:
         )
         
         self._initialized = True
-        logger.info("✅ Database initialized")
+        logger.info("✅ Azure SQL Database connected")
     
     async def create_tables(self) -> None:
         """Create database tables"""
@@ -96,10 +115,14 @@ class DatabaseManager:
             await self.async_engine.dispose()
             self._initialized = False
 
+# Global database manager
 db_manager = DatabaseManager()
 
 async def get_db_session() -> AsyncSession:
-    """Get database session for FastAPI"""
+    """Get database session for FastAPI dependency injection"""
+    if not db_manager._initialized:
+        db_manager.initialize()
+    
     async with db_manager.async_session_factory() as session:
         try:
             yield session

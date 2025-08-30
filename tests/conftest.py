@@ -1,15 +1,20 @@
 """
 Pytest configuration for GPAlytics Backend tests
+Cloud-first testing: Uses same Azure SQL Database as production
 """
 
 import pytest
 import asyncio
 from pathlib import Path
 import sys
+import os
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+# Set test environment
+os.environ["ENVIRONMENT"] = "testing"
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -20,13 +25,19 @@ def event_loop():
 
 @pytest.fixture(autouse=True)
 async def setup_test_db():
-    """Setup test database before each test"""
+    """Setup test database before each test
+    
+    Note: Uses same Azure SQL Database as production.
+    Tests should be designed to be non-destructive.
+    """
     from app.database import db_manager
     
-    # Initialize database for tests
+    # Initialize Azure database connection for tests
     db_manager.initialize()
+    
+    # Ensure tables exist (idempotent operation)
     await db_manager.create_tables()
     
     yield
     
-    # Cleanup after test (optional)
+\

@@ -54,3 +54,40 @@ class Token(SQLModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+# ==========================================
+# GRADE & UPLOAD MODELS
+# ==========================================
+
+class Grade(SQLModel, table=True):
+    """
+    Grade Database Table
+    """
+    __tablename__ = "grades"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)
+    user_id: str = Field(foreign_key="users.id", max_length=36)
+    course_name: str = Field(max_length=200)
+    course_code: str = Field(max_length=20)
+    credits: int = Field(ge=1, le=6)
+    grade: str = Field(max_length=5)
+    semester: int = Field(ge=1, le=12)
+    gpa_points: float = Field(ge=0.0, le=10.0) # Using 10 for grade points like O=10
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GradeUpload(SQLModel, table=True):
+    """Tracks file uploads for processing"""
+    __tablename__ = "grade_uploads"
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)
+    user_id: str = Field(foreign_key="users.id", max_length=36)
+    filename: str = Field(max_length=255)
+    status: str = Field(default="processing", max_length=50) # e.g., processing, completed, failed
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class UploadStatusResponse(SQLModel):
+    """Response model after a file is uploaded"""
+    upload_id: str
+    filename: str
+    status: str
+    message: str = "File received and is being processed."

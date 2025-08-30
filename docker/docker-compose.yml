@@ -1,51 +1,27 @@
 # ==========================================
 # Docker Compose for GPAlytics Backend
-# Optimized for development and production
 # ==========================================
 
 services:
   # ==========================================
-  # SQL Server for local development
+  # Redis for caching, sessions, rate limiting
   # ==========================================
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: gpalytics_sqlserver
-    environment:
-      SA_PASSWORD: "GPAlytics2024!"
-      ACCEPT_EULA: "Y"
-      MSSQL_PID: "Developer"
+  redis:
+    image: redis:7-alpine
+    container_name: gpalytics_redis
     ports:
-      - "1433:1433"
+      - "6379:6379"
     volumes:
-      - sqlserver_data:/var/opt/mssql
+      - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'GPAlytics2024!' -Q 'SELECT 1' -C"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 3
     networks:
       - gpalytics_network
     restart: unless-stopped
-
-  # ==========================================
-  # Database Initializer
-  # ==========================================
-  db-init:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: gpalytics_db_init
-    depends_on:
-      sqlserver:
-        condition: service_healthy
-    command: >
-      /bin/bash -c "
-      echo 'Creating GPAlytics database...' &&
-      /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U SA -P 'GPAlytics2024!' -C -Q 'CREATE DATABASE GPAlytics' ||
-      echo 'Database might already exist, continuing...' &&
-      echo 'Database initialization complete'
-      "
-    networks:
-      - gpalytics_network
+    command: redis-server --appendonly yes
 
   # ==========================================
   # FastAPI Application
@@ -56,19 +32,19 @@ services:
       dockerfile: docker/Dockerfile
     container_name: gpalytics_app
     environment:
-      # Use local SQL Server
-      DATABASE_URL: "mssql+aioodbc://sa:GPAlytics2024!@sqlserver:1433/GPAlytics?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes"
-      JWT_SECRET_KEY: "dev-secret-key-change-in-production"
+      # Azure SQL Database (cloud-first)
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY}"
       JWT_ALGORITHM: "HS256"
       JWT_EXPIRE_MINUTES: "30"
-      DEBUG: "true"
+      DEBUG: "false"
+      ENVIRONMENT: "production"
     ports:
       - "8000:8000"
     depends_on:
-      sqlserver:
+      redis:
         condition: service_healthy
-      db-init:
-        condition: service_completed_successfully
     volumes:
       - ../logs:/app/logs
     healthcheck:
@@ -90,19 +66,20 @@ services:
       dockerfile: docker/Dockerfile.dev
     container_name: gpalytics_app_dev
     environment:
-      DATABASE_URL: "mssql+aioodbc://sa:GPAlytics2024!@sqlserver:1433/GPAlytics?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes"
-      JWT_SECRET_KEY: "dev-secret-key-change-in-production"
+      # Azure SQL Database (same as production for cloud-first development)
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-dev-secret-key-change-in-production}"
       JWT_ALGORITHM: "HS256"
-      JWT_EXPIRE_MINUTES: "30"
+      JWT_EXPIRE_MINUTES: "60"
       DEBUG: "true"
+      ENVIRONMENT: "development"
       PYTHONPATH: "/app"
     ports:
       - "8001:8000"
     depends_on:
-      sqlserver:
+      redis:
         condition: service_healthy
-      db-init:
-        condition: service_completed_successfully
     volumes:
       - ../app:/app/app:rw
       - ../tests:/app/tests:rw
@@ -115,7 +92,7 @@ services:
       - dev
 
 volumes:
-  sqlserver_data:
+  redis_data:
     driver: local
 
 networks:
