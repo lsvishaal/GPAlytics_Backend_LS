@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlalchemy import text
+from typing import AsyncGenerator
 import logging
 import secrets
 
@@ -36,7 +37,21 @@ class Settings(BaseSettings):
     
     @property
     def database_url_str(self) -> str:
-        return self.database_url.get_secret_value()
+        """Get database URL - automatically uses test database during testing"""
+        url = self.database_url.get_secret_value()
+        
+        # Auto-switch to test database if we're in test mode
+        if self.environment.lower() == "testing":
+            # Replace database name with test version
+            if "database=" in url:
+                # For Azure SQL: replace database name
+                import re
+                url = re.sub(r'database=([^;]+)', r'database=\1_test', url)
+            else:
+                # For other databases, append _test
+                url = url.rstrip('/') + '_test'
+        
+        return url
     
     @property 
     def jwt_secret_str(self) -> str:
@@ -118,7 +133,7 @@ class DatabaseManager:
 # Global database manager
 db_manager = DatabaseManager()
 
-async def get_db_session() -> AsyncSession:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for FastAPI dependency injection"""
     if not db_manager._initialized:
         db_manager.initialize()

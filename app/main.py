@@ -3,14 +3,13 @@ GPAlytics Backend - FastAPI Application
 Clean, minimal FastAPI app for academic performance tracking
 """
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from .database import db_manager, get_db_session
-from .auth import register_user, login_user
-from .models import UserRegister, UserLogin
+from .database import db_manager
+from .auth import router as auth_router
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +55,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include auth router
+app.include_router(auth_router)
+
 
 # ==========================================
 # HEALTH CHECK ENDPOINTS
@@ -74,36 +76,6 @@ async def database_health_check():
     if not is_healthy:
         raise HTTPException(status_code=503, detail="Database unhealthy")
     return {"status": "healthy", "database": "connected"}
-
-
-# ==========================================
-# AUTHENTICATION ENDPOINTS
-# ==========================================
-
-@app.post("/auth/register")
-async def register(user: UserRegister, db = Depends(get_db_session)):
-    """Register a new user"""
-    try:
-        result = await register_user(db, user)
-        return {"message": "User registered successfully", "user": result}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.post("/auth/login")
-async def login(user: UserLogin, db = Depends(get_db_session)):
-    """Login user and return JWT token"""
-    try:
-        result = await login_user(db, user.regno, user.password)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ==========================================

@@ -1,21 +1,91 @@
-# GPAlytics Backend - Clean & Dockerized
+# GPAlytics Backend - Core Business Flow 📊
 
-> **Modern FastAPI backend with optimized Docker setup and UV package management**
+## 🎯 **Project Vision**
+An intelligent GPA analytics platform that processes grade sheets using OCR + AI, then provides comprehensive academic insights.
+
+## 🔄 **Core Business Flow**
+
+### **Phase 1: User Authentication** 
+```
+POST /auth/register → User Registration
+POST /auth/login    → User Login  
+GET  /auth/profile  → Protected Profile Access
+```
+
+### **Phase 2: Grade Sheet Processing (Core Innovation)**
+```
+POST /upload/grade-sheet → Upload image/PDF
+     ↓
+OCR Extraction (messy text)
+     ↓  
+Gemini API Cleanup (structured data)
+     ↓
+Store in Database (user's grades)
+```
+
+### **Phase 3: Analytics & Insights**
+```
+GET /grades/semester/{id}     → View semester grades
+GET /grades/cgpa             → Calculate CGPA
+GET /grades/percentile       → Rank among peers
+GET /grades/predictions      → Next semester predictions
+GET /grades/analytics        → Min/Max GPA insights
+```
+
+---
+
+## 🏗️ **API Endpoints (Priority Order)**
+
+### **MVP Endpoints (Build First)**
+1. `POST /auth/register` - User registration ✅
+2. `POST /auth/login` - User authentication ✅
+3. `POST /upload/grade-sheet` - Core feature: Upload & process grades ⏳
+4. `GET /grades/cgpa` - View calculated CGPA ⏳
+5. `GET /grades/analytics` - Basic analytics ⏳
+
+### **Enhancement Endpoints (Build Later)**
+6. `GET /grades/percentile` - Peer comparison
+7. `GET /grades/predictions` - AI predictions
+8. `POST /grades/manual-entry` - Manual grade entry
+9. `GET /grades/export` - Export data
+
+---
+
+## 🚀 **Development Sprint Plan**
+
+### **Sprint 1: Authentication Foundation** ✅
+- ✅ User registration/login
+- ✅ JWT token management
+- ✅ Basic validation
+
+### **Sprint 2: Core Upload Feature** ⏳ 
+- 📤 File upload endpoint
+- 🔍 OCR integration
+- 🤖 Gemini API integration
+- 💾 Grade storage
+
+### **Sprint 3: Analytics Engine**
+- 📊 GPA/CGPA calculation
+- 📈 Basic analytics
+- 🎯 Percentile calculation
+
+### **Sprint 4: Advanced Features**
+- 🔮 Predictions
+- 📋 Manual entry
+- 🎨 Enhanced analytics
+
+---
+
+## 🔥 **Key Differentiators**
+
+1. **AI-Powered OCR Cleanup** - Gemini API fixes messy OCR output
+2. **Automated Grade Extraction** - No manual data entry needed
+3. **Peer Analytics** - Compare with batch mates
+4. **Predictive Insights** - AI predicts next semester performance
+
+---
 
 ## 🚀 **Quick Start**
-
-### **Prerequisites**
-- [UV](https://docs.astral.sh/uv/) (Python package manager)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-
-### **Install UV** (if not installed)
-```powershell
-# Windows PowerShell
-irm https://astral.sh/uv/install.ps1 | iex
-
-# Linux/macOS
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
 
 ## 📁 **Project Structure**
 
