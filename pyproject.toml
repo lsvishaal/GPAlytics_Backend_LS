@@ -19,6 +19,7 @@ dependencies = [
     "pytest>=8.4.1",
     "httpx>=0.28.1",
     "pydantic-settings>=2.10.1",
+    "aiosqlite>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -41,10 +42,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
 addopts = "-v --tb=short"
-filterwarnings = [
-    "ignore::pytest.PytestConfigWarning"
-]
 
 [dependency-groups]
 dev = [

@@ -1,29 +1,44 @@
 """
-Pytest configuration for GPAlytics Backend tests
+Simple test configuration for GPAlytics Backend
+Uses Azure SQL - tests create and cleanup their own data
 """
 import pytest
+import os
 import sys
 from pathlib import Path
+from fastapi.testclient import TestClient
 
-# Add the project root to Python path
+# Add project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Configure pytest
-def pytest_configure(config):
-    """Configure pytest"""
-    pass
+# Set testing environment
+os.environ["ENVIRONMENT"] = "testing"
+os.environ["DEBUG"] = "true"
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
-    """Setup test environment"""
-    import os
+from app.main import app
+
+
+@pytest.fixture
+def test_client():
+    """FastAPI test client"""
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture  
+def unique_test_user():
+    """Generate unique test user data for each test"""
+    import uuid
+    import random
     
-    # Set test environment variables
-    os.environ["ENVIRONMENT"] = "testing"
-    os.environ["DEBUG"] = "true"
+    # Generate unique test data
+    letters = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=2))
+    digits = ''.join(random.choices('0123456789', k=13))
     
-    yield
-    
-    # Cleanup after tests
-    pass
+    return {
+        "name": f"TEST_USER_{uuid.uuid4().hex[:5].upper()}",
+        "regno": letters + digits,
+        "password": "TestPass123!",
+        "batch": 2021
+    }
