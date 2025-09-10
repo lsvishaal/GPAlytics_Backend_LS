@@ -1,67 +1,20 @@
 """
- database connection for Azure SQL Database
+Core Database Configuration
+Database connection and session management for Azure SQL
 """
-from pydantic_settings import BaseSettings
-from pydantic import Field, SecretStr
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine, async_sessionmaker
 from sqlmodel import SQLModel
 from sqlalchemy import text
 from typing import AsyncGenerator
 import logging
-import secrets
+
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# SETTINGS
-# ==========================================
-
-class Settings(BaseSettings):
-    """Application settings"""
-    
-    # Database
-    database_url: SecretStr = Field(default=SecretStr(""))  # Will be loaded from .env
-    
-    # JWT
-    jwt_secret_key: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 30
-    
-    # Gemini AI
-    gemini_key: SecretStr = Field(default=SecretStr(""))
-    
-    # App
-    debug: bool = False
-    environment: str = Field(default="production")
-    
-    @property
-    def database_url_str(self) -> str:
-        """Get database URL as string"""
-        return self.database_url.get_secret_value()
-    
-    @property 
-    def jwt_secret_str(self) -> str:
-        return self.jwt_secret_key.get_secret_value()
-    
-    @property
-    def gemini_key_str(self) -> str:
-        """Get Gemini API key as string"""
-        return self.gemini_key.get_secret_value()
-    
-    @property
-    def is_development(self) -> bool:
-        return self.environment.lower() == "development"
-
-    model_config = {"env_file": ".env"}
-
-settings = Settings()
-
-# ==========================================
-# DATABASE MANAGER
-# ==========================================
 
 class DatabaseManager:
-    """Simple database manager for Azure SQL"""
+    """Database manager for Azure SQL with serverless support"""
     
     def __init__(self):
         self.async_engine: AsyncEngine | None = None
@@ -75,12 +28,12 @@ class DatabaseManager:
             
         logger.info(f"🔌 Connecting to Azure SQL Database ({settings.environment})...")
         
-        # Engine configuration
+        # Engine configuration optimized for serverless Azure SQL
         engine_kwargs = {
             "echo": settings.debug and settings.is_development,
             "pool_size": 5,
             "pool_timeout": 30,
-            "pool_pre_ping": True,
+            "pool_pre_ping": False,  # Disable pre_ping for aioodbc compatibility
             "pool_recycle": 3600,  # Recycle connections every hour
         }
         
@@ -89,6 +42,7 @@ class DatabaseManager:
             **engine_kwargs
         )
         
+        # Create proper async session factory for FastAPI DI
         self.async_session_factory = async_sessionmaker(
             self.async_engine,
             class_=AsyncSession,
@@ -127,8 +81,10 @@ class DatabaseManager:
             await self.async_engine.dispose()
             self._initialized = False
 
-# Global database manager
+
+# Global database manager instance
 db_manager = DatabaseManager()
+
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for FastAPI dependency injection"""
@@ -138,11 +94,13 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     if not db_manager.async_session_factory:
         raise RuntimeError("Database session factory not initialized")
     
-    async with db_manager.async_session_factory() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    # Use the proper async session context manager
+    session = db_manager.async_session_factory()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()

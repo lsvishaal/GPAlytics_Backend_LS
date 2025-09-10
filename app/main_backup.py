@@ -1,6 +1,6 @@
 """
 GPAlytics Backend - FastAPI Application
-Clean Architecture with Domain-Driven Design
+Clean, minimal FastAPI app for academic performance tracking
 """
 
 from fastapi import FastAPI, HTTPException
@@ -9,11 +9,12 @@ from contextlib import asynccontextmanager
 import logging
 import asyncio
 
-from .core import db_manager
+from .database import db_manager
 from .auth import router as auth_router
-from .grades import router as grades_router  
+from .OCR import router as grades_router
 from .analytics import router as analytics_router
-from .users import router as users_router
+from .profile import router as profile_router
+
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="GPAlytics Backend",
-    description="Clean Architecture FastAPI backend for academic performance tracking",
-    version="2.0.0",
+    description="Clean, minimal FastAPI backend for academic performance tracking",
+    version="1.0.0",
     lifespan=lifespan
 )
 
@@ -114,11 +115,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include domain routers
+# Include routers
 app.include_router(auth_router)
 app.include_router(grades_router)
 app.include_router(analytics_router)
-app.include_router(users_router)
+app.include_router(profile_router)
 
 
 # ==========================================
@@ -128,7 +129,7 @@ app.include_router(users_router)
 @app.get("/health")
 async def health_check():
     """Application health check"""
-    return {"status": "healthy", "service": "GPAlytics Backend", "version": "2.0.0"}
+    return {"status": "healthy", "service": "GPAlytics Backend"}
 
 
 @app.get("/health/db")
@@ -181,8 +182,7 @@ async def root():
     """Root endpoint"""
     return {
         "message": "Welcome to GPAlytics Backend",
-        "version": "2.0.0",
-        "architecture": "Clean Architecture with Domain-Driven Design",
+        "version": "1.0.0",
         "docs": "/docs",
         "health": "/health"
     }

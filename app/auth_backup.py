@@ -233,29 +233,85 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db_sessio
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@router.post("/logout")
-async def logout(current_user: User = Depends(get_current_user)):
+@router.post("/forgot-password")
+async def forgot_password(
+    request: dict,
+    db: AsyncSession = Depends(get_db_session)
+):
     """
-    Logout user by invalidating their session
-    Provides clean logout for frontend state management
+    **Reset Password (Simplified Implementation)**
+    
+    Since we use registration numbers instead of email, this endpoint
+    allows password reset using regno + name verification.
+    
+    **Request Body:**
+    ```json
+    {
+        "regno": "AB2021000000001",
+        "name": "Student Name",
+        "new_password": "NewPassword123!"
+    }
+    ```
+    
+    **Security Note:** In production, implement proper email/SMS verification.
+    This simplified version is for development/testing purposes.
     """
     try:
-        logger.info(f"User logout initiated: {current_user.regno} (ID: {current_user.id})")
+        # Extract and validate inputs
+        regno = request.get("regno", "").strip()
+        name = request.get("name", "").strip() 
+        new_password = request.get("new_password", "")
+        
+        if not all([regno, name, new_password]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Registration number, name, and new password are required"
+            )
+        
+        # Validate new password
+        if error := validate_password(new_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error
+            )
+        
+        # Find user by regno
+        user = await get_user_by_regno(db, regno)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Verify name matches (simple identity verification)
+        if user.name.lower() != name.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Name doesn't match our records"
+            )
+        
+        # Update password
+        user.password_hash = hash_password(new_password)
+        user.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        
+        logger.info(f"Password reset successful for user {regno}")
         
         return {
             "success": True,
-            "message": "Logout successful",
-            "user_who_logged_out": current_user.regno,
-            "logged_out_at": datetime.now(timezone.utc).isoformat(),
-            "instructions": "Please remove the access token from your client storage"
+            "message": "Password reset successful. You can now login with your new password.",
+            "regno": regno
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Logout process failed for user {current_user.id}: {str(e)}")
-        # Even if logging fails, logout should succeed for UX
-        return {
-            "success": True,
-            "message": "Logout completed",
-            "user_who_logged_out": current_user.regno,
-            "instructions": "Please remove the access token from your client storage"
-        }
+        logger.error(f"Password reset failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset failed"
+        )
+
+# Logout removed - stateless JWT doesn't require server-side logout
+# Frontend should simply discard the token
