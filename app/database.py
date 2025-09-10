@@ -3,8 +3,7 @@
 """
 from pydantic_settings import BaseSettings
 from pydantic import Field, SecretStr
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
 from sqlmodel import SQLModel
 from sqlalchemy import text
 from typing import AsyncGenerator
@@ -21,15 +20,15 @@ class Settings(BaseSettings):
     """Application settings"""
     
     # Database
-    database_url: SecretStr = Field(...)
-    
-    # Redis
-    redis_url: str = Field(default="redis://localhost:6379")
+    database_url: SecretStr = Field(default=SecretStr(""))  # Will be loaded from .env
     
     # JWT
     jwt_secret_key: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
+    
+    # Gemini AI
+    gemini_key: SecretStr = Field(default=SecretStr(""))
     
     # App
     debug: bool = False
@@ -37,25 +36,17 @@ class Settings(BaseSettings):
     
     @property
     def database_url_str(self) -> str:
-        """Get database URL - automatically uses test database during testing"""
-        url = self.database_url.get_secret_value()
-        
-        # Auto-switch to test database if we're in test mode
-        if self.environment.lower() == "testing":
-            # Replace database name with test version
-            if "database=" in url:
-                # For Azure SQL: replace database name
-                import re
-                url = re.sub(r'database=([^;]+)', r'database=\1_test', url)
-            else:
-                # For other databases, append _test
-                url = url.rstrip('/') + '_test'
-        
-        return url
+        """Get database URL as string"""
+        return self.database_url.get_secret_value()
     
     @property 
     def jwt_secret_str(self) -> str:
         return self.jwt_secret_key.get_secret_value()
+    
+    @property
+    def gemini_key_str(self) -> str:
+        """Get Gemini API key as string"""
+        return self.gemini_key.get_secret_value()
     
     @property
     def is_development(self) -> bool:
@@ -73,7 +64,7 @@ class DatabaseManager:
     """Simple database manager for Azure SQL"""
     
     def __init__(self):
-        self.async_engine = None
+        self.async_engine: AsyncEngine | None = None
         self.async_session_factory = None
         self._initialized = False
     
@@ -98,7 +89,7 @@ class DatabaseManager:
             **engine_kwargs
         )
         
-        self.async_session_factory = sessionmaker(
+        self.async_session_factory = async_sessionmaker(
             self.async_engine,
             class_=AsyncSession,
             expire_on_commit=False
@@ -109,6 +100,9 @@ class DatabaseManager:
     
     async def create_tables(self) -> None:
         """Create database tables"""
+        if not self.async_engine:
+            raise RuntimeError("Database not initialized")
+        
         logger.info("🏗️ Creating tables...")
         async with self.async_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -116,6 +110,9 @@ class DatabaseManager:
     
     async def health_check(self) -> bool:
         """Check database health"""
+        if not self.async_engine:
+            return False
+        
         try:
             async with self.async_engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
@@ -137,6 +134,9 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for FastAPI dependency injection"""
     if not db_manager._initialized:
         db_manager.initialize()
+    
+    if not db_manager.async_session_factory:
+        raise RuntimeError("Database session factory not initialized")
     
     async with db_manager.async_session_factory() as session:
         try:

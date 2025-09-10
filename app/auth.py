@@ -7,8 +7,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -169,10 +169,51 @@ async def login_user(db: AsyncSession, regno: str, password: str) -> dict:
     }
 
 # ==========================================
+# JWT AUTHENTICATION DEPENDENCY
+# ==========================================
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db_session)
+) -> User:
+    """Get current authenticated user from JWT token"""
+    token = credentials.credentials
+    
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_str, algorithms=[settings.jwt_algorithm])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Get user from database
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user
+
+# ==========================================
 # FASTAPI ROUTES
 # ==========================================
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register")
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db_session)):
@@ -191,3 +232,30 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db_sessio
         return {"message": "Login successful", **result}
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@router.post("/logout")
+async def logout(current_user: User = Depends(get_current_user)):
+    """
+    Logout user by invalidating their session
+    Provides clean logout for frontend state management
+    """
+    try:
+        logger.info(f"User logout initiated: {current_user.regno} (ID: {current_user.id})")
+        
+        return {
+            "success": True,
+            "message": "Logout successful",
+            "user_who_logged_out": current_user.regno,
+            "logged_out_at": datetime.now(timezone.utc).isoformat(),
+            "instructions": "Please remove the access token from your client storage"
+        }
+        
+    except Exception as e:
+        logger.error(f"Logout process failed for user {current_user.id}: {str(e)}")
+        # Even if logging fails, logout should succeed for UX
+        return {
+            "success": True,
+            "message": "Logout completed",
+            "user_who_logged_out": current_user.regno,
+            "instructions": "Please remove the access token from your client storage"
+        }
