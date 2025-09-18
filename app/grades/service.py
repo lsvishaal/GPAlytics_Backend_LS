@@ -226,6 +226,156 @@ class GradesService:
             logger.error(f"Failed to get semester {semester} grades for user {user_id}: {str(e)}")
             raise DatabaseError(f"Failed to retrieve semester grades: {str(e)}")
 
+    async def delete_all_user_data(self, db: AsyncSession, user_id: str) -> Dict[str, Any]:
+        """
+        Delete all grades and uploads for a user (for testing/reset purposes)
+        
+        This is a comprehensive cleanup operation that removes:
+        - All grade records for the user
+        - All upload records for the user
+        
+        Returns summary of deleted records
+        """
+        try:
+            # Get counts before deletion for reporting
+            grades_stmt = select(Grade).where(Grade.user_id == user_id)
+            uploads_stmt = select(GradeUpload).where(GradeUpload.user_id == user_id)
+            
+            grades_result = await db.execute(grades_stmt)
+            uploads_result = await db.execute(uploads_stmt)
+            
+            grades_count = len(list(grades_result.scalars().all()))
+            uploads_count = len(list(uploads_result.scalars().all()))
+            
+            if grades_count == 0 and uploads_count == 0:
+                return {
+                    "status": "no_data",
+                    "message": "No grade data found for user",
+                    "deleted_grades": 0,
+                    "deleted_uploads": 0
+                }
+            
+            # Delete all grades for the user using instance deletion for SQLModel compatibility
+            grades_to_delete = await db.execute(select(Grade).where(Grade.user_id == user_id))
+            for grade in grades_to_delete.scalars().all():
+                await db.delete(grade)
+            
+            # Delete all uploads for the user
+            uploads_to_delete = await db.execute(select(GradeUpload).where(GradeUpload.user_id == user_id))
+            for upload in uploads_to_delete.scalars().all():
+                await db.delete(upload)
+            
+            # Commit the transaction
+            await db.commit()
+            
+            logger.info(f"Deleted all data for user {user_id}: {grades_count} grades, {uploads_count} uploads")
+            
+            return {
+                "status": "success",
+                "message": "Successfully deleted all grade data for user",
+                "deleted_grades": grades_count,
+                "deleted_uploads": uploads_count
+            }
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to delete user data for {user_id}: {str(e)}")
+            raise DatabaseError(f"Failed to delete user data: {str(e)}")
+    
+    async def delete_semester_data(
+        self, 
+        db: AsyncSession, 
+        user_id: str, 
+        semester: int
+    ) -> Dict[str, Any]:
+        """
+        Delete all grades for a specific semester (granular testing control)
+        
+        This allows selective deletion of semester data while preserving other semesters
+        """
+        try:
+            # Get grades for the specific semester
+            grades_stmt = select(Grade).where(
+                (Grade.user_id == user_id) & (Grade.semester == semester)
+            )
+            grades_result = await db.execute(grades_stmt)
+            grades_to_delete = list(grades_result.scalars().all())
+            grades_count = len(grades_to_delete)
+            
+            if grades_count == 0:
+                return {
+                    "status": "no_data",
+                    "message": f"No grades found for semester {semester}",
+                    "deleted_grades": 0,
+                    "semester": semester
+                }
+            
+            # Delete grades for the specific semester
+            for grade in grades_to_delete:
+                await db.delete(grade)
+            
+            await db.commit()
+            
+            logger.info(f"Deleted semester {semester} data for user {user_id}: {grades_count} grades")
+            
+            return {
+                "status": "success",
+                "message": f"Successfully deleted {grades_count} grades for semester {semester}",
+                "deleted_grades": grades_count,
+                "semester": semester
+            }
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to delete semester {semester} data for user {user_id}: {str(e)}")
+            raise DatabaseError(f"Failed to delete semester data: {str(e)}")
+    
+    async def delete_upload_data(
+        self, 
+        db: AsyncSession, 
+        user_id: str, 
+        upload_id: str
+    ) -> Dict[str, Any]:
+        """
+        Delete upload record (precise testing control)
+        
+        This allows deletion of specific upload records for testing cleanup
+        Note: Grade records don't currently track upload_id, so this only deletes the upload record
+        """
+        try:
+            # Check if upload exists and belongs to user
+            upload_stmt = select(GradeUpload).where(
+                (GradeUpload.id == upload_id) & (GradeUpload.user_id == user_id)
+            )
+            upload_result = await db.execute(upload_stmt)
+            upload_record = upload_result.scalar_one_or_none()
+            
+            if not upload_record:
+                return {
+                    "status": "not_found",
+                    "message": f"Upload {upload_id} not found or doesn't belong to user",
+                    "deleted_uploads": 0,
+                    "upload_id": upload_id
+                }
+            
+            # Delete the upload record
+            await db.delete(upload_record)
+            await db.commit()
+            
+            logger.info(f"Deleted upload record {upload_id} for user {user_id}")
+            
+            return {
+                "status": "success",
+                "message": "Successfully deleted upload record",
+                "deleted_uploads": 1,
+                "upload_id": upload_id
+            }
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to delete upload {upload_id} for user {user_id}: {str(e)}")
+            raise DatabaseError(f"Failed to delete upload data: {str(e)}")
+
 
 # Service instance
 grades_service = GradesService()

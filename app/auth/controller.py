@@ -90,11 +90,23 @@ async def login(
     """
     **User Login**
     
-    Authenticate user and return access token.
+    Authenticate user and return access token with flexible expiration.
     
     **Request Body:**
     - `regno`: Registration number
     - `password`: User password
+    - `remember_me`: Optional boolean flag (default: false)
+      - `false`: Token expires in 30 minutes (standard session)
+      - `true`: Token expires in 7 days (extended session)
+    
+    **Response:**
+    - User profile information
+    - JWT access token
+    - Token expiration time in seconds
+    - Remember me flag confirmation
+    
+    **Security Note:** Extended sessions are ideal for personal devices.
+    Use standard sessions for shared or public devices.
     """
     try:
         result = await auth_service.login_user(db, credentials)

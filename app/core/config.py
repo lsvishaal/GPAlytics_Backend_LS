@@ -21,6 +21,8 @@ class Settings(BaseModel):
     jwt_secret_key: SecretStr = Field(default_factory=lambda: SecretStr(os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))))
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    use_secure_cookies: bool = os.getenv("USE_SECURE_COOKIES", "true").lower() == "true"
     
     # Gemini AI Configuration
     gemini_key: SecretStr = Field(default_factory=lambda: SecretStr(os.getenv("GEMINI_KEY", "")))

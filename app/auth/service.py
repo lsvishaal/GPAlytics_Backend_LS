@@ -2,9 +2,8 @@
 Authentication Service
 Pure business logic for user authentication
 """
-import re
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,7 +108,7 @@ class AuthService:
         }
     
     async def login_user(self, db: AsyncSession, credentials: UserLoginSchema) -> dict:
-        """Authenticate user and return token"""
+        """Authenticate user and return token with optional extended expiration"""
         
         try:
             user = await self.get_user_by_regno(db, credentials.regno)
@@ -120,14 +119,24 @@ class AuthService:
             user.last_login = datetime.now(timezone.utc)
             await db.commit()
             
-            # Create token
+            # Determine token expiration based on remember_me flag
+            if credentials.remember_me:
+                # Extended session: 7 days
+                expires_delta = timedelta(days=7)
+                expires_in_seconds = 7 * 24 * 60 * 60  # 7 days in seconds
+            else:
+                # Standard session: 30 minutes
+                expires_delta = None  # Use default from settings
+                expires_in_seconds = 30 * 60  # 30 minutes in seconds
+            
+            # Create token with appropriate expiration
             token_data = {
                 "sub": user.id,
                 "regno": user.regno,
                 "name": user.name,
                 "batch": user.batch
             }
-            access_token = create_access_token(token_data)
+            access_token = create_access_token(token_data, expires_delta)
             
             return {
                 "user": UserPublicSchema(
@@ -140,8 +149,9 @@ class AuthService:
                 ),
                 "token": TokenSchema(
                     access_token=access_token,
-                    expires_in=30 * 60
-                )
+                    expires_in=expires_in_seconds
+                ),
+                "remember_me": credentials.remember_me
             }
         except Exception as e:
             # Ensure we rollback on any error

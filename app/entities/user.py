@@ -2,10 +2,13 @@
 User Entity Models
 Database models and Pydantic schemas for user domain
 """
-from sqlmodel import SQLModel, Field
-from typing import Optional
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 import uuid
+
+if TYPE_CHECKING:
+    from .refresh_token import RefreshToken
 
 
 # ==========================================
@@ -28,6 +31,9 @@ class User(UserBase, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
     last_login: Optional[datetime] = Field(default=None)
+    
+    # Relationship to RefreshTokens
+    refresh_tokens: list["RefreshToken"] = Relationship(back_populates="user")
 
 
 # ==========================================
@@ -46,6 +52,8 @@ class UserLoginSchema(SQLModel):
     """User login request schema"""
     regno: str = Field(max_length=15)
     password: str = Field(max_length=100)
+    remember_me: bool = Field(default=False, description="Keep user logged in for extended period (7 days)")
+    use_cookies: bool = Field(default=False, description="Store tokens as HttpOnly cookies for enhanced security")
 
 
 class UserPublicSchema(UserBase):

@@ -78,3 +78,13 @@ class CGPAAnalyticsSchema(SQLModel):
     cgpa: float
     semesters_completed: int
     semester_breakdown: list[SemesterSummarySchema]
+
+
+class DeleteResponseSchema(SQLModel):
+    """Response schema for delete operations"""
+    status: str
+    message: str
+    deleted_grades: int = 0
+    deleted_uploads: int = 0
+    semester: Optional[int] = None
+    upload_id: Optional[str] = None

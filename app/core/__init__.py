@@ -3,7 +3,16 @@ Core package initialization
 """
 from .config import settings
 from .database import db_manager, get_db_session
-from .security import hash_password, verify_password, create_access_token, decode_access_token
+from .security import (
+    hash_password, 
+    verify_password, 
+    create_access_token, 
+    decode_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    hash_refresh_token,
+    verify_refresh_token_hash
+)
 from .exceptions import (
     GPAlyticsException,
     AuthenticationError, 
@@ -30,6 +39,10 @@ __all__ = [
     "verify_password", 
     "create_access_token",
     "decode_access_token",
+    "create_refresh_token",
+    "decode_refresh_token", 
+    "hash_refresh_token",
+    "verify_refresh_token_hash",
     
     # Exceptions
     "GPAlyticsException",

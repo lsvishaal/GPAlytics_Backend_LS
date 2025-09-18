@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from ..auth import get_current_user
-from ..entities import User, UploadStatusResponseSchema
+from ..entities import User, UploadStatusResponseSchema, DeleteResponseSchema
 from ..core import get_db_session, FileValidationError, OCRProcessingError, DatabaseError
 from .service import grades_service
 from .ocr import ocr_service
@@ -154,6 +154,112 @@ async def get_upload_help():
         ],
         "contact_support": {
             "message": "If you continue to experience issues after following this guide, please contact technical support with the specific error message you received."
+        }
+    }
+
+
+@router.get("/delete-help")
+async def get_delete_help():
+    """
+    **Delete Operations Help & Safety Guide**
+    
+    Comprehensive guide for using the delete endpoints safely and effectively.
+    
+    **Returns:** Detailed information about delete operations and safety measures
+    """
+    return {
+        "available_operations": {
+            "complete_reset": {
+                "endpoint": "DELETE /grades/reset",
+                "description": "Delete ALL grades and uploads for your account",
+                "use_cases": [
+                    "Reset account for fresh testing",
+                    "Clear all data before re-uploading corrected grades",
+                    "Clean slate for demo purposes"
+                ],
+                "warning": "⚠️ DESTRUCTIVE: Cannot be undone!"
+            },
+            "semester_deletion": {
+                "endpoint": "DELETE /grades/semester/{semester}",
+                "description": "Delete grades for a specific semester only",
+                "use_cases": [
+                    "Re-test specific semester upload",
+                    "Correct data for particular academic period",
+                    "Selective cleanup during development"
+                ],
+                "parameters": {
+                    "semester": "Integer from 1-12"
+                },
+                "warning": "⚠️ SELECTIVE: Only affects specified semester"
+            },
+            "upload_record_deletion": {
+                "endpoint": "DELETE /grades/uploads/{upload_id}",
+                "description": "Delete specific upload record by ID",
+                "use_cases": [
+                    "Clean up failed upload records",
+                    "Remove test upload entries",
+                    "Manage upload history"
+                ],
+                "parameters": {
+                    "upload_id": "UUID of the upload record"
+                },
+                "note": "Does not affect grade data (grades don't track upload_id currently)"
+            }
+        },
+        "safety_measures": {
+            "authentication": "All delete operations require valid JWT authentication",
+            "authorization": "Users can only delete their own data",
+            "transaction_safety": "All operations use database transactions with rollback on error",
+            "audit_logging": "All delete operations are logged with user ID and details",
+            "confirmation_required": "No accidental deletions - explicit endpoint calls required"
+        },
+        "response_format": {
+            "structure": {
+                "status": "success|no_data|not_found",
+                "message": "Human-readable description",
+                "deleted_grades": "Number of grade records deleted",
+                "deleted_uploads": "Number of upload records deleted",
+                "semester": "Semester number (for semester-specific operations)",
+                "upload_id": "Upload ID (for upload-specific operations)"
+            },
+            "status_codes": {
+                "200": "Operation successful",
+                "401": "Authentication required",
+                "404": "No data found to delete",
+                "400": "Invalid parameters (e.g., invalid semester)",
+                "500": "Server error during operation"
+            }
+        },
+        "testing_workflow": {
+            "recommended_sequence": [
+                "1. Upload test data using POST /grades/process-result-card",
+                "2. Verify data with GET /grades/",
+                "3. Test semester deletion with DELETE /grades/semester/{semester}",
+                "4. Test complete reset with DELETE /grades/reset",
+                "5. Verify deletion with GET /grades/",
+                "6. Re-upload to test functionality after reset"
+            ],
+            "best_practices": [
+                "Always check current data before deletion",
+                "Use semester deletion for granular testing",
+                "Use complete reset for full system tests",
+                "Verify results after each delete operation"
+            ]
+        },
+        "integration_notes": {
+            "frontend_integration": {
+                "confirmation_dialogs": "Implement confirmation dialogs for all delete operations",
+                "loading_states": "Show loading indicators during delete operations",
+                "error_handling": "Display specific error messages from API responses",
+                "success_feedback": "Show clear confirmation of what was deleted"
+            },
+            "api_usage": {
+                "headers": {
+                    "Authorization": "Bearer {jwt_token}",
+                    "Content-Type": "application/json"
+                },
+                "error_handling": "Check response.status_code and handle appropriately"
+            }
         }
     }
 @router.post("/process-result-card", response_model=UploadStatusResponseSchema)
@@ -314,3 +420,210 @@ async def process_result_card(
                 status_code=500,
                 detail="An unexpected error occurred while processing your grade sheet. Please try again or contact support if the problem persists."
             )
+
+
+@router.delete("/reset", response_model=DeleteResponseSchema)
+async def reset_all_user_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    **Reset All User Grade Data** ⚠️
+    
+    **DESTRUCTIVE OPERATION**: Delete all grades and uploads for the authenticated user.
+    
+    This endpoint is designed for testing and development purposes, allowing users to:
+    - Clear all uploaded grade data
+    - Reset their academic record for fresh testing
+    - Remove all upload history
+    
+    **⚠️ WARNING**: This action cannot be undone!
+    
+    **Returns:** Summary of deleted records
+    
+    **Use Cases:**
+    - Testing grade upload functionality repeatedly
+    - Resetting account for demo purposes
+    - Clearing incorrect data after upload mistakes
+    
+    **Possible Errors:**
+    - `401`: Authentication required
+    - `404`: No data found to delete
+    - `500`: Database operation failed
+    """
+    # Capture user ID early to avoid session issues
+    user_id = current_user.id
+    
+    try:
+        logger.info(f"🗑️ User {user_id} initiated complete data reset")
+        
+        result = await grades_service.delete_all_user_data(db, user_id)
+        
+        if result["status"] == "no_data":
+            raise HTTPException(
+                status_code=404,
+                detail="No grade data found to delete"
+            )
+        
+        logger.info(f"✅ Successfully reset all data for user {user_id}: "
+                   f"{result['deleted_grades']} grades, {result['deleted_uploads']} uploads")
+        
+        return DeleteResponseSchema(**result)
+        
+    except HTTPException:
+        raise
+    except DatabaseError as e:
+        logger.error(f"Database error during reset for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reset user data: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during reset for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during data reset. Please try again or contact support."
+        )
+
+
+@router.delete("/semester/{semester}", response_model=DeleteResponseSchema)
+async def delete_semester_data(
+    semester: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    **Delete Semester Data** ⚠️
+    
+    **SELECTIVE DELETION**: Remove all grades for a specific semester while preserving other semesters.
+    
+    This endpoint provides granular control for testing and data management:
+    - Delete grades for a specific semester only
+    - Preserve grades from other semesters
+    - Useful for re-testing specific semester uploads
+    
+    **Parameters:**
+    - `semester`: Semester number (1-12) to delete
+    
+    **⚠️ WARNING**: This action cannot be undone!
+    
+    **Returns:** Summary of deleted records for the specified semester
+    
+    **Use Cases:**
+    - Re-testing upload for a specific semester
+    - Correcting data for a particular academic period
+    - Selective cleanup during development
+    
+    **Possible Errors:**
+    - `401`: Authentication required
+    - `400`: Invalid semester number
+    - `404`: No data found for the specified semester
+    - `500`: Database operation failed
+    """
+    # Validate semester range
+    if not (1 <= semester <= 12):
+        raise HTTPException(
+            status_code=400,
+            detail="Semester must be between 1 and 12"
+        )
+    
+    user_id = current_user.id
+    
+    try:
+        logger.info(f"🗑️ User {user_id} initiated deletion of semester {semester} data")
+        
+        result = await grades_service.delete_semester_data(db, user_id, semester)
+        
+        if result["status"] == "no_data":
+            raise HTTPException(
+                status_code=404,
+                detail=f"No grade data found for semester {semester}"
+            )
+        
+        logger.info(f"✅ Successfully deleted semester {semester} data for user {user_id}: "
+                   f"{result['deleted_grades']} grades")
+        
+        return DeleteResponseSchema(**result)
+        
+    except HTTPException:
+        raise
+    except DatabaseError as e:
+        logger.error(f"Database error deleting semester {semester} for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete semester data: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error deleting semester {semester} for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during semester deletion. Please try again or contact support."
+        )
+
+
+@router.delete("/uploads/{upload_id}", response_model=DeleteResponseSchema)
+async def delete_upload_record(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    **Delete Upload Record** ⚠️
+    
+    **PRECISE DELETION**: Remove a specific upload record from the system.
+    
+    This endpoint provides the most granular control for upload management:
+    - Delete specific upload records by ID
+    - Useful for cleaning up failed or test uploads
+    - Does not affect grade data (grades don't currently track upload_id)
+    
+    **Parameters:**
+    - `upload_id`: UUID of the upload record to delete
+    
+    **⚠️ WARNING**: This action cannot be undone!
+    
+    **Returns:** Summary of deleted upload record
+    
+    **Use Cases:**
+    - Cleaning up failed upload records
+    - Removing test upload entries
+    - Managing upload history
+    
+    **Possible Errors:**
+    - `401`: Authentication required
+    - `400`: Invalid upload ID format
+    - `404`: Upload not found or doesn't belong to user
+    - `500`: Database operation failed
+    """
+    user_id = current_user.id
+    
+    try:
+        logger.info(f"🗑️ User {user_id} initiated deletion of upload {upload_id}")
+        
+        result = await grades_service.delete_upload_data(db, user_id, upload_id)
+        
+        if result["status"] == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail="Upload record not found or doesn't belong to you"
+            )
+        
+        logger.info(f"✅ Successfully deleted upload {upload_id} for user {user_id}")
+        
+        return DeleteResponseSchema(**result)
+        
+    except HTTPException:
+        raise
+    except DatabaseError as e:
+        logger.error(f"Database error deleting upload {upload_id} for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete upload record: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error deleting upload {upload_id} for user {user_id}: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during upload deletion. Please try again or contact support."
+        )
