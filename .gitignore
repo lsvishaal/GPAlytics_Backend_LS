@@ -67,3 +67,13 @@ README_NEW.md
 # Personal folders
 .github/
 .vscode/
+
+# Personal development notes
+SPEC_KIT_GUIDE.md
+
+# Spec Kit generated assets (commit these for team collaboration)
+# memory/
+# scripts/
+# templates/
+# specs/
+# CLAUDE.md

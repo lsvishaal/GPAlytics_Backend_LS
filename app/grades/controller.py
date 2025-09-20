@@ -400,11 +400,10 @@ async def process_result_card(
     except Exception as e:
         logger.error(f"Unexpected error processing result card for user {user_id}: {str(e)}")
         logger.error(f"Error type: {type(e).__name__}")
-        
+
         # Analyze error for better user feedback
         error_message = str(e)
-        error_type = type(e).__name__
-        
+
         if 'timeout' in error_message.lower():
             raise HTTPException(
                 status_code=504,
