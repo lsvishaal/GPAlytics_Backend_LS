@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    """Database manager for Azure SQL with serverless support"""
+    """Database manager for Azure SQL with serverless support.
+
+    Behavior:
+    - If `DATABASE_URL` is missing/empty, initialization is skipped and health_check returns False.
+    - Engine/session creation occurs lazily and once; callers can check `_initialized`.
+    """
     
     def __init__(self):
         self.async_engine: AsyncEngine | None = None
@@ -22,10 +27,19 @@ class DatabaseManager:
         self._initialized = False
     
     def initialize(self) -> None:
-        """Initialize Azure database connection"""
+        """Initialize Azure database connection if configuration is present.
+
+        This function is safe to call multiple times. If DATABASE_URL is not set,
+        the manager remains uninitialized so the app can still boot (readiness
+        will report DB as unhealthy or skipped based on usage).
+        """
         if self._initialized:
             return
-            
+        
+        if not settings.has_database_url:
+            logger.warning("DATABASE_URL not configured; skipping DB initialization")
+            return
+        
         logger.info(f"🔌 Connecting to Azure SQL Database ({settings.environment})...")
         
         # Engine configuration optimized for serverless Azure SQL
@@ -55,7 +69,8 @@ class DatabaseManager:
     async def create_tables(self) -> None:
         """Create database tables"""
         if not self.async_engine:
-            raise RuntimeError("Database not initialized")
+            logger.warning("create_tables called before DB initialization; skipping")
+            return
         
         logger.info("🏗️ Creating tables...")
         async with self.async_engine.begin() as conn:
@@ -65,6 +80,7 @@ class DatabaseManager:
     async def health_check(self) -> bool:
         """Check database health"""
         if not self.async_engine:
+            # Not initialized or no DATABASE_URL
             return False
         
         try:
@@ -79,7 +95,10 @@ class DatabaseManager:
         """Close database connections"""
         if self.async_engine:
             await self.async_engine.dispose()
-            self._initialized = False
+        # Always reset flags so init can happen again later if config changes
+        self.async_engine = None
+        self.async_session_factory = None
+        self._initialized = False
 
 
 # Global database manager instance

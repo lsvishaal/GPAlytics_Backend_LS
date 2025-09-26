@@ -1,6 +1,12 @@
 """
 Core Configuration Management
-Centralized settings for GPAlytics application
+
+Simple, explicit settings loaded from environment variables (.env supported).
+
+Guiding ideas:
+- Keep production defaults safe.
+- Avoid hard dependencies where possible (e.g., AI/Redis optional).
+- Provide tiny helper properties for ergonomics in the rest of the codebase.
 """
 from pydantic import BaseModel, Field, SecretStr
 import secrets
@@ -12,7 +18,17 @@ load_dotenv()
 
 
 class Settings(BaseModel):
-    """Application settings with environment variable support"""
+    """Application settings with environment variable support.
+
+    Environment variables (examples):
+    - DATABASE_URL=Driver=ODBC Driver 18 for SQL Server;Server=tcp:... (Azure SQL via pyodbc)
+    - JWT_SECRET_KEY=super-secret
+    - GEMINI_KEY=your-gemini-key
+    - ENVIRONMENT=production|development
+    - DEBUG=true|false
+    - DB_WARMUP_ON_STARTUP=false  # don't block app startup waiting for DB
+    - REDIS_URL=redis://host:6379  # optional
+    """
     
     # Database Configuration
     database_url: SecretStr = Field(default_factory=lambda: SecretStr(os.getenv("DATABASE_URL", "")))
@@ -30,6 +46,7 @@ class Settings(BaseModel):
     # Application Configuration
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
     environment: str = os.getenv("ENVIRONMENT", "production")
+    db_warmup_on_startup: bool = os.getenv("DB_WARMUP_ON_STARTUP", "false").lower() == "true"
     
     # Computed Properties
     @property
@@ -51,6 +68,11 @@ class Settings(BaseModel):
     def is_development(self) -> bool:
         """Check if running in development mode"""
         return self.environment.lower() == "development"
+
+    @property
+    def has_database_url(self) -> bool:
+        """Whether a database URL is configured (non-empty)."""
+        return bool(self.database_url_str)
 
 
 # Global settings instance

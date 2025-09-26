@@ -3,13 +3,14 @@ GPAlytics Backend - FastAPI Application
 Clean Architecture with Domain-Driven Design
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import asyncio
 
 from .core import db_manager
+from .core.health import readiness
 from .auth import router as auth_router
 from .grades import router as grades_router  
 from .analytics import router as analytics_router
@@ -72,14 +73,20 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting GPAlytics Backend...")
     
-    # Try to connect to serverless database with retry logic
-    database_ready = await wait_for_serverless_db(max_retries=5, base_delay=3.0)
-    
-    if database_ready:
-        logger.info("✅ Database fully initialized and ready")
-    else:
-        logger.warning("⚠️ Database connection failed - running in development mode")
-        logger.info("🔄 API endpoints will be available, but database operations will fail gracefully")
+    # Optionally warm up DB at startup to reduce first-request latency.
+    # Non-blocking by default (controlled via DB_WARMUP_ON_STARTUP=false).
+    try:
+        from .core.config import settings
+        if settings.db_warmup_on_startup and settings.has_database_url:
+            database_ready = await wait_for_serverless_db(max_retries=5, base_delay=3.0)
+            if database_ready:
+                logger.info("✅ Database fully initialized and ready")
+            else:
+                logger.warning("⚠️ Database warmup failed; continuing without blocking startup")
+        else:
+            logger.info("⏭️ Skipping DB warmup at startup (config disabled or no DATABASE_URL)")
+    except Exception as e:
+        logger.warning(f"⚠️ DB warmup skipped due to error: {e}")
     
     logger.info("✅ Application startup complete")
     yield
@@ -100,7 +107,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="GPAlytics Backend",
-    description="Clean Architecture FastAPI backend for academic performance tracking",
+    description="Clean Architecture FastAPI backend for academic performance tracking and insights",
     version="2.0.0",
     lifespan=lifespan
 )
@@ -122,54 +129,24 @@ app.include_router(users_router)
 
 
 # ==========================================
-# HEALTH CHECK ENDPOINTS
+# HEALTH CHECK ENDPOINTS (Ready-only)
 # ==========================================
 
-@app.get("/health")
-async def health_check():
-    """Application health check"""
-    return {"status": "healthy", "service": "GPAlytics Backend", "version": "2.0.0"}
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe: aggregates dependencies (DB, Redis, AI config).
 
+    Returns 200 with full details even if unhealthy; status conveys readiness.
+    """
+    # Keep readiness quick and non-blocking
+    result = await readiness(max_db_retries=1, base_delay=0.0)
+    if result.get("status") != "healthy":
+        # Keep 200 but include status; many orchestrators can parse JSON.
+        # If you prefer strict semantics, you could return 503 here.
+        return result
+    return result
 
-@app.get("/health/db")
-async def database_health_check():
-    """Database health check with serverless database support"""
-    try:
-        # First check if database manager is initialized
-        if not db_manager._initialized:
-            logger.warning("Database manager not initialized, attempting to initialize...")
-            database_ready = await wait_for_serverless_db(max_retries=3, base_delay=2.0)
-            if not database_ready:
-                raise HTTPException(
-                    status_code=503, 
-                    detail="Database unavailable - serverless database may be starting up"
-                )
-        
-        # Perform health check
-        is_healthy = await db_manager.health_check()
-        if not is_healthy:
-            raise HTTPException(
-                status_code=503, 
-                detail="Database health check failed - may be in cold start"
-            )
-        
-        return {"status": "healthy", "database": "connected", "type": "serverless"}
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        error_msg = str(e).lower()
-        
-        # Provide specific messages for serverless scenarios
-        if any(keyword in error_msg for keyword in ['timeout', 'not currently available', 'login timeout']):
-            raise HTTPException(
-                status_code=503, 
-                detail="Serverless database is starting up - please retry in a few seconds"
-            )
-        else:
-            logger.error(f"Database health check error: {str(e)}")
-            raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
+    # Single source of truth for health info; keep others out for simplicity
 
 
 # ==========================================
@@ -184,5 +161,5 @@ async def root():
         "version": "2.0.0",
         "architecture": "Clean Architecture with Domain-Driven Design",
         "docs": "/docs",
-        "health": "/health"
+        "ready": "/ready"
     }
