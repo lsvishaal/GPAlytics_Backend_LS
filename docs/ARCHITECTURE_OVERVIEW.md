@@ -1,24 +1,19 @@
 # GPAlytics Backend — Architecture Overview
 
-This document provides a comprehensive overview of the codebase structure and component interactions. Use it alongside the utility scripts to explore the system architecture.
+This document gives you a fast, opinionated tour of the codebase and how the parts connect. Use it with the scripts in `scripts/` to explore modules and API endpoints interactively.
 
 ## Entry Points
 
-- `src/app/main.py`: FastAPI application definition and router registration
-  - Includes routers from `src/routers/{auth,users,grades,analytics}`
-  - Sets up CORS, health checks, and database lifecycle management
+- `app/main.py`: FastAPI application definition and router registration.
+  - Includes routers from `app/auth`, `app/grades`, `app/analytics`, `app/users`.
+  - Sets up CORS and lifespan (startup/shutdown) that manages DB connections.
 
-## Clean Architecture Implementation
+## Clean Architecture Layers (as implemented)
 
-**Current Active Structure** (routers are the primary implementation):
-
-- **HTTP Layer**: `src/routers/*/api.py` - FastAPI endpoints with dependency injection
-- **Business Logic**: `src/routers/*/service.py` - Domain logic and database operations
-- **Data Models**: `src/shared/entities.py` - SQLModel tables and Pydantic schemas
-- **Core Infrastructure**: `src/shared/*` - Cross-cutting concerns and utilities
-
-**Legacy Structure** (being phased out):
-- `src/features/*` - Original feature modules, functionality moved to routers
+- Controller (HTTP): `*/controller.py` files define `APIRouter` endpoints and dependency injection.
+- Service (Business Logic): `*/service.py` files encapsulate use-cases and DB access orchestration.
+- Entities (Data Models): `app/entities/*.py` define SQLModel tables and Pydantic schemas.
+- Core (Cross-cutting): `app/core/*` provides config, database, security, exceptions/utilities.
 
 ## Domain Packages
 
