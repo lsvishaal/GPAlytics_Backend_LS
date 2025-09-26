@@ -1,11 +1,11 @@
 """Test utilities and helpers"""
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import uuid
 from src.shared.entities import User, Grade
 from src.shared.security import hash_password
 
 
-def create_test_user_data(regno: str = None) -> Dict[str, Any]:
+def create_test_user_data(regno: Optional[str] = None) -> Dict[str, Any]:
     """Create test user registration data"""
     if not regno:
         regno = f"RA2211027{str(uuid.uuid4())[:6]}"
@@ -35,7 +35,7 @@ class TestDataFactory:
     """Factory for creating test data"""
     
     @staticmethod
-    def create_user(regno: str = None, **kwargs) -> User:
+    def create_user(regno: Optional[str] = None, **kwargs) -> User:
         """Create User instance for testing"""
         defaults = {
             "name": "Test User",

@@ -3,9 +3,7 @@ import asyncio
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import SQLModel
-
-from src.app.main import app
+from typing import AsyncGenerator
 from src.shared.database import get_db_session, db_manager
 from src.shared.entities import User
 from src.shared.security import hash_password
@@ -36,7 +34,7 @@ async def setup_database():
 
 
 @pytest.fixture
-async def db_session(setup_database) -> AsyncSession:
+async def db_session(setup_database) -> AsyncGenerator[AsyncSession, None]:
     """Get database session for tests"""
     async for session in get_db_session():
         yield session
@@ -45,8 +43,9 @@ async def db_session(setup_database) -> AsyncSession:
 
 
 @pytest.fixture
-async def client(setup_database) -> AsyncClient:
+async def client(setup_database) -> AsyncGenerator[AsyncClient, None]:
     """Get HTTP client for API tests"""
+    from src.app.main import app
     async with AsyncClient(app=app, base_url="http://testserver") as client:
         yield client
 

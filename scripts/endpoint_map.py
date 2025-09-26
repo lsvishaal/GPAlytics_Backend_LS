@@ -5,7 +5,7 @@ Run: uv run python scripts/endpoint_map.py
 from importlib import import_module
 
 def main():
-    app_module = import_module('app.main')
+    app_module = import_module('src.app.main')
     app = getattr(app_module, 'app')
     routes = []
     for r in app.routes:
